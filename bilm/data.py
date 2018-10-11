@@ -190,6 +190,109 @@ class UnicodeCharsVocabulary(Vocabulary):
             return np.vstack([self.bos_chars] + chars_ids + [self.eos_chars])
 
 
+class UnicodeCharsExtVocabulary(Vocabulary):
+    """Vocabulary containing character-level and word level information.
+
+    Has a word vocabulary that is used to lookup word ids and
+    a character id that is used to map words to arrays of character ids.
+
+    The character ids are defined by ord(c) for c in word.encode('utf-8')
+    This limits the total number of possible char ids to 256.
+    To this we add 5 additional special ids: begin sentence, end sentence,
+        begin word, end word and padding.
+
+    WARNING: for prediction, we add +1 to the output ids from this
+    class to create a special padding id (=0).  As a result, we suggest
+    you use the `Batcher`, `TokenBatcher`, and `LMDataset` classes instead
+    of this lower level class.  If you are using this lower level class,
+    then be sure to add the +1 appropriately, otherwise embeddings computed
+    from the pre-trained model will be useless.
+    """
+    def __init__(self, filename, max_word_length, **kwargs):
+        super(UnicodeCharsExtVocabulary, self).__init__(filename, **kwargs)
+        self._max_word_length = max_word_length
+
+        self._id_to_char = sorted(list(set([c for w in self._id_to_word for c in w])))
+
+        num_chars = len(self._id_to_char)
+        self.bos_char = num_chars  # <begin sentence>
+        self.eos_char = num_chars+1  # <end sentence>
+        self.bow_char = num_chars+2  # <begin word>
+        self.eow_char = num_chars+3  # <end word>
+        self.pad_char = num_chars+4 # <padding>
+        self.unk_char = num_chars+5
+
+        self._id_to_char += ["<BOS_C>", "<EOS_C>", "<BOW_C>", "<EOW_C>", "<PAD_C>", "<UNK_C>"]
+        self._char_to_id = {w: i for i, w in enumerate(self._id_to_char)}
+
+        num_words = len(self._id_to_word)
+
+        self._word_char_ids = np.zeros([num_words, max_word_length],
+            dtype=np.int32)
+
+        # the charcter representation of the begin/end of sentence characters
+        def _make_bos_eos(c):
+            r = np.zeros([self.max_word_length], dtype=np.int32)
+            r[:] = self.pad_char
+            r[0] = self.bow_char
+            r[1] = c
+            r[2] = self.eow_char
+            return r
+        self.bos_chars = _make_bos_eos(self.bos_char)
+        self.eos_chars = _make_bos_eos(self.eos_char)
+
+        for i, word in enumerate(self._id_to_word):
+            self._word_char_ids[i] = self._convert_word_to_char_ids(word)
+
+        self._word_char_ids[self.bos] = self.bos_chars
+        self._word_char_ids[self.eos] = self.eos_chars
+        # TODO: properly handle <UNK>
+
+    @property
+    def char_size(self):
+        return len(self._id_to_char)
+
+    @property
+    def word_char_ids(self):
+        return self._word_char_ids
+
+    @property
+    def max_word_length(self):
+        return self._max_word_length
+
+    def _convert_word_to_char_ids(self, word):
+        code = np.zeros([self.max_word_length], dtype=np.int32)
+        code[:] = self.pad_char
+
+        word_encoded = word[:(self.max_word_length-2)]
+        code[0] = self.bow_char
+        for k, chr_id in enumerate(word_encoded, start=1):
+            code[k] = self._char_to_id.get(chr_id, self.unk_char)
+        code[len(word_encoded) + 1] = self.eow_char
+
+        return code
+
+    def word_to_char_ids(self, word):
+        if word in self._word_to_id:
+            return self._word_char_ids[self._word_to_id[word]]
+        else:
+            return self._convert_word_to_char_ids(word)
+
+    def encode_chars(self, sentence, reverse=False, split=True):
+        '''
+        Encode the sentence as a white space delimited string of tokens.
+        '''
+        if split:
+            chars_ids = [self.word_to_char_ids(cur_word)
+                     for cur_word in sentence.split()]
+        else:
+            chars_ids = [self.word_to_char_ids(cur_word)
+                     for cur_word in sentence]
+        if reverse:
+            return np.vstack([self.eos_chars] + chars_ids + [self.bos_chars])
+        else:
+            return np.vstack([self.bos_chars] + chars_ids + [self.eos_chars])
+
 class Batcher(object):
     ''' 
     Batch sentences of tokenized text into character id matrices.
@@ -200,7 +303,7 @@ class Batcher(object):
             token)
         max_token_length = the maximum number of characters in each token
         '''
-        self._lm_vocab = UnicodeCharsVocabulary(
+        self._lm_vocab = UnicodeCharsExtVocabulary(
             lm_vocab_file, max_token_length
         )
         self._max_token_length = max_token_length

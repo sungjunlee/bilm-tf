@@ -12,7 +12,7 @@ import numpy as np
 
 from tensorflow.python.ops.init_ops import glorot_uniform_initializer
 
-from .data import Vocabulary, UnicodeCharsVocabulary, InvalidNumberOfCharacters
+from .data import Vocabulary, UnicodeCharsExtVocabulary, InvalidNumberOfCharacters
 
 
 DTYPE = 'float32'
@@ -141,9 +141,12 @@ class LanguageModel(object):
         char_embed_dim = cnn_options['embedding']['dim']
         n_chars = cnn_options['n_characters']
         if n_chars != 261:
-            raise InvalidNumberOfCharacters(
-                    "Set n_characters=261 for training see the README.md"
-            )
+            if self.options['use_unicode_ext_char']:
+                print(f"n_chars: {n_chars}")
+            else:
+                raise InvalidNumberOfCharacters(
+                        "Set n_characters=261 for training see the README.md"
+                )
         if cnn_options['activation'] == 'tanh':
             activation = tf.nn.tanh
         elif cnn_options['activation'] == 'relu':
@@ -1056,7 +1059,7 @@ def load_options_latest_checkpoint(tf_save_dir):
 
 def load_vocab(vocab_file, max_word_length=None):
     if max_word_length:
-        return UnicodeCharsVocabulary(vocab_file, max_word_length,
+        return UnicodeCharsExtVocabulary(vocab_file, max_word_length,
                                       validate_file=True)
     else:
         return Vocabulary(vocab_file, validate_file=True)

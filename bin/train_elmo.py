@@ -31,7 +31,7 @@ def main(args):
        [6, 512],
        [7, 1024]],
       'max_characters_per_token': 50,
-      'n_characters': 261,
+      'n_characters': vocab.char_size,
       'n_highway': 2},
     
      'dropout': 0.1,
@@ -52,6 +52,7 @@ def main(args):
      'n_tokens_vocab': vocab.size,
      'unroll_steps': 20,
      'n_negative_samples_batch': 8192,
+     'use_unicode_ext_char': True
     }
 
     prefix = args.train_prefix
